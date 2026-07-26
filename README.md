@@ -224,14 +224,13 @@ The Streamlit dashboard provides:
 
 ---
 
-# 👥 Team
+## 👥 Team — Origin Point
 
-| Member     | Responsibility                                                        |
-| ---------- | --------------------------------------------------------------------- |
-| **Akshay** | Data preprocessing, Streamlit dashboard integration, backend pipeline |
-| **Anurag** | Feature engineering, forecasting models, SHAP explainability          |
-| **Daksh**  | Data generation, customer segmentation, recommendation system         |
-
+| Member | Role | GitHub | Responsibilities |
+|--------|------|--------|------------------|
+| **Akshay Sharma** | Backend Integration, Data Processing & Dashboard | https://github.com/Akshay-23A | `preprocessing.py`, `app.py`, `data/processed/`, README, requirements |
+| **Anurag Bahuguna** | ML Pipeline, Forecasting & Explainability | https://github.com/Anurag678-coder | `feature_engineering.py`, `forecasting.py`, `explainability.py`, `models/` |
+| **Daksh** | Data Generation & Customer Analytics | *(Add GitHub if available)* | `data_generation.py`, `segmentation.py`, `recommendation.py`, `data/raw/`, `reports/` |
 ---
 
 # 🔮 Future Improvements
