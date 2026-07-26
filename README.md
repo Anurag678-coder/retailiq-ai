@@ -1,33 +1,55 @@
 # 🛒 RetailIQ AI
 
-Full-stack Retail Data Science pipeline — from raw sales data to AI-powered business insights, all in one interactive dashboard.
+**Full-stack Retail Data Science pipeline — from raw sales data to AI-powered business insights, all in one interactive dashboard.**
 
 **Project Type:** College Minor Project (Data Science)
 **Team:** Origin Point
-**Status:** Completed ✅
+**Status:** ✅ Completed
 
-## 📌 What is this?
+---
 
-RetailIQ AI is an end-to-end retail analytics system that takes raw sales, customer, and basket transaction data and turns it into actionable business intelligence. It cleans and processes data, engineers time-series features, forecasts future sales using multiple ML models, explains predictions with SHAP, segments customers using RFM + KMeans, and recommends products using Market Basket Analysis — all visualized in a single Streamlit dashboard.
+# 📌 Overview
 
-## 🚨 Problem Statement
+RetailIQ AI is an end-to-end retail analytics platform that transforms raw retail transaction data into actionable business insights.
 
-Retail businesses generate huge volumes of transactional data but rarely use it beyond basic reporting. Sales trends go unnoticed, customer value isn't quantified, and product bundling opportunities are missed. RetailIQ AI automates the full analytics pipeline so businesses can forecast demand, identify high-value customers, and boost cross-selling — without manual analysis.
+The project automatically generates or processes retail sales, customer, and basket transaction data, cleans and prepares it for machine learning, engineers predictive features, forecasts future sales using multiple ML models, explains model predictions using SHAP, segments customers using RFM + KMeans clustering, and recommends products using Market Basket Analysis.
 
-## 🎯 Project Goals
+All outputs are presented through a modern interactive Streamlit dashboard.
 
-- Clean and standardize raw retail data for downstream analysis
-- Engineer meaningful time-series features (lags, rolling stats, calendar effects)
-- Forecast future sales using and comparing multiple ML models
-- Explain model predictions using SHAP for transparency
-- Segment customers using RFM analysis + KMeans clustering
-- Recommend frequently co-purchased products using Apriori
-- Present everything in a single interactive dashboard
+---
 
-## 🏗️ System Architecture
+# 🚨 Problem Statement
 
+Retail businesses generate large volumes of transactional data, but much of it remains underutilized.
 
+Most businesses struggle to:
 
+* Identify future sales trends
+* Understand customer value
+* Segment customers effectively
+* Discover cross-selling opportunities
+* Explain AI model predictions
+
+RetailIQ AI automates the complete analytics workflow so businesses can make data-driven decisions without manual analysis.
+
+---
+
+# 🎯 Project Objectives
+
+* Generate realistic synthetic retail datasets
+* Clean and preprocess raw retail data
+* Engineer time-series features
+* Forecast future sales using multiple ML models
+* Explain predictions with SHAP Explainable AI
+* Segment customers using RFM + KMeans
+* Recommend products using Apriori Market Basket Analysis
+* Visualize everything inside one interactive dashboard
+
+---
+
+# 🏗️ System Architecture
+
+```
 Raw Data Generation (Daksh)
         │
         ▼
@@ -37,91 +59,121 @@ Data Preprocessing (Akshay)
 Feature Engineering (Anurag)
         │
         ▼
-Forecasting Models (Anurag)
+Forecasting Models
+(Linear Regression
+ Random Forest
+ XGBoost
+ Prophet)
         │
         ▼
-SHAP Explainability (Anurag)
+SHAP Explainability
         │
         ▼
-Customer Segmentation — RFM + KMeans (Daksh)
+Customer Segmentation
+(RFM + KMeans)
         │
         ▼
-Recommendation System — Apriori (Daksh)
+Product Recommendation
+(Apriori Algorithm)
         │
         ▼
-Streamlit Dashboard Integration (Akshay)
+Interactive Streamlit Dashboard
         │
         ▼
-✅ RetailIQ AI — Live Dashboard
+✅ RetailIQ AI
+```
 
+---
 
-## 📁 Project Structure
+# 📁 Project Structure
 
-
-RetailIQ-AI/
+```text
+retailiq-ai/
 ├── src/
-│   ├── data_generation.py       # Synthetic retail dataset generation
-│   ├── preprocessing.py         # Data cleaning pipeline
-│   ├── feature_engineering.py   # Lag, rolling, calendar features
-│   ├── forecasting.py           # Multi-model sales forecasting
-│   ├── explainability.py        # SHAP-based model explanation
-│   ├── segmentation.py          # RFM + KMeans customer segmentation
-│   └── recommendation.py        # Apriori market basket analysis
+│   ├── data_generation.py
+│   ├── preprocessing.py
+│   ├── feature_engineering.py
+│   ├── forecasting.py
+│   ├── explainability.py
+│   ├── segmentation.py
+│   └── recommendation.py
+│
 ├── data/
 │   ├── raw/
-│   │   ├── sales_data.csv
-│   │   ├── customer_transactions.csv
-│   │   └── basket_transactions.csv
 │   └── processed/
-│       ├── sales_clean.csv
-│       ├── daily_totals.csv
-│       ├── features.csv
-│       ├── customer_segments.csv
-│       └── association_rules.csv
+│
 ├── models/
-│   ├── best_model.pkl
-│   ├── all_models.pkl
-│   ├── best_model_name.json
-│   ├── model_comparison.csv
-│   ├── shap_values.pkl
-│   ├── shap_feature_importance.csv
-│   ├── shap_summary.png
-│   └── shap_waterfall.png
 ├── notebooks/
-│   ├── EDA.ipynb
-│   └── Model_testing.ipynb
-├── reports/                     # Graphs, screenshots, analysis reports
-├── app.py                       # Streamlit dashboard
+├── reports/
+│
+├── app.py
 ├── requirements.txt
-├── .gitignore
-└── README.md
+├── README.md
+├── PROJECT_NOTES.md
+└── .gitignore
+```
 
+---
 
+# ⚙️ Analytics Pipeline
 
-## ⚙️ The Analytics Pipeline
+| Step | Script                   | Purpose                                                                 |
+| ---- | ------------------------ | ----------------------------------------------------------------------- |
+| 1    | `data_generation.py`     | Generate synthetic retail datasets                                      |
+| 2    | `preprocessing.py`       | Clean data, remove duplicates, fill missing values, cap outliers        |
+| 3    | `feature_engineering.py` | Create lag, rolling and calendar features                               |
+| 4    | `forecasting.py`         | Train and compare Linear Regression, Random Forest, XGBoost and Prophet |
+| 5    | `explainability.py`      | Generate SHAP summary and waterfall plots                               |
+| 6    | `segmentation.py`        | Perform RFM analysis and KMeans clustering                              |
+| 7    | `recommendation.py`      | Generate Apriori association rules                                      |
+| 8    | `app.py`                 | Launch the interactive Streamlit dashboard                              |
 
-| Step | Script | Action |
-|------|--------|--------|
-| 1 | `data_generation.py` | Generate synthetic sales, customer & basket datasets |
-| 2 | `preprocessing.py` | Remove duplicates, handle missing values, cap outliers, aggregate daily totals |
-| 3 | `feature_engineering.py` | Create lag features, rolling stats, calendar features |
-| 4 | `forecasting.py` | Train & compare Linear Regression, Random Forest, XGBoost, Prophet |
-| 5 | `explainability.py` | Generate SHAP summary & waterfall plots for the best model |
-| 6 | `segmentation.py` | RFM analysis + KMeans clustering → VIP / Loyal / At Risk labels |
-| 7 | `recommendation.py` | Apriori algorithm → frequently bought-together product rules |
-| 8 | `app.py` | Streamlit dashboard tying everything together |
+---
 
-## 🖥️ Installation & Running
+# 🚀 Installation
 
-bash
-# 1. Clone the repo
-git clone https://github.com/<your-org>/RetailIQ-AI
-cd RetailIQ-AI
+## 1. Clone the repository
 
-# 2. Install dependencies
+```bash
+git clone https://github.com/<your-username>/retailiq-ai.git
+cd retailiq-ai
+```
+
+## 2. Create a virtual environment
+
+### Linux / macOS
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### Windows
+
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+## 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-# 3. Run the full pipeline
+## 4. Verify installation
+
+```bash
+python -c "import pandas, sklearn, xgboost, prophet, shap, streamlit; print('All dependencies installed successfully!')"
+```
+
+---
+
+# ▶️ Running the Project
+
+Run the scripts in the following order:
+
+```bash
 python src/data_generation.py
 python src/preprocessing.py
 python src/feature_engineering.py
@@ -129,42 +181,73 @@ python src/forecasting.py
 python src/explainability.py
 python src/segmentation.py
 python src/recommendation.py
+```
 
-# 4. Launch the dashboard
+Launch the dashboard:
+
+```bash
 streamlit run app.py
+```
 
+---
 
-## 🛠️ Tech Stack
+# 🖥️ Dashboard Features
 
-| Layer | Technology |
-|-------|-----------|
-| Language | Python 3 |
-| Data Processing | Pandas, NumPy |
-| ML Models | Scikit-learn, XGBoost, Prophet |
-| Explainability | SHAP |
-| Clustering | KMeans, StandardScaler |
-| Market Basket Analysis | Apriori (mlxtend) |
-| Dashboard | Streamlit + Plotly |
-| Notebooks | Jupyter (EDA & experimentation) |
+The Streamlit dashboard provides:
 
-## 👥 Team — Origin Point
+* Interactive sales overview
+* Store and category filters
+* Forecast visualization
+* SHAP Explainable AI
+* Customer segmentation
+* Product recommendations
+* What-if prediction simulator
+* Interactive Plotly charts
+* CSV export functionality
 
-| Owner | Responsibility | GitHub | Files/Folders |
-|-------|----------------|--------|----------------|
-| **Akshay** | Backend Integration + Dashboard + Data Processing | [@Akshay-23A](https://github.com/Akshay-23A) | `preprocessing.py`, `app.py`, `data/processed/`, README, requirements |
-| **Anurag** | ML Pipeline — Forecasting + Explainability | [@Anurag678-coder](https://github.com/Anurag678-coder) | `feature_engineering.py`, `forecasting.py`, `explainability.py`, `models/` |
-| **Daksh** | Data Generation + Customer Analytics |  | `data_generation.py`, `segmentation.py`, `recommendation.py`, `data/raw/`, `reports/` |
+---
 
-## 🔮 Future Directions
+# 🛠️ Tech Stack
 
-- Real retail dataset integration (beyond synthetic data)
-- Deep learning-based forecasting (LSTM/Transformer)
-- Real-time dashboard updates via live data feed
-- Multi-store / multi-region comparative analytics
-- Customer churn prediction module
-- Automated report generation (PDF export)
+| Category              | Technology                  |
+| --------------------- | --------------------------- |
+| Language              | Python 3                    |
+| Data Processing       | Pandas, NumPy               |
+| Machine Learning      | Scikit-learn                |
+| Forecasting           | XGBoost, Prophet            |
+| Explainability        | SHAP                        |
+| Customer Segmentation | RFM, KMeans                 |
+| Recommendation System | Apriori (mlxtend)           |
+| Visualization         | Plotly, Matplotlib, Seaborn |
+| Dashboard             | Streamlit                   |
+| Notebook              | Jupyter Notebook            |
 
-## License
+---
 
-This project is provided under the MIT License – feel free to use, modify, and distribute.
+# 👥 Team
 
+| Member     | Responsibility                                                        |
+| ---------- | --------------------------------------------------------------------- |
+| **Akshay** | Data preprocessing, Streamlit dashboard integration, backend pipeline |
+| **Anurag** | Feature engineering, forecasting models, SHAP explainability          |
+| **Daksh**  | Data generation, customer segmentation, recommendation system         |
+
+---
+
+# 🔮 Future Improvements
+
+* Real-world retail dataset integration
+* Live sales dashboard
+* Multi-store analytics
+* Customer churn prediction
+* Deep learning forecasting (LSTM / Transformer)
+* Automated PDF report generation
+* Cloud deployment
+
+---
+
+# 📄 License
+
+This project is released under the **MIT License**.
+
+Feel free to use, modify, and distribute it for educational or research purposes.
