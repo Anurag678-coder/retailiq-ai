@@ -1,5 +1,4 @@
 model,R2,RMSE,MAE
-Prophet,0.4249,174.62,131.95
-Random Forest,0.0259,227.25,209.5
-XGBoost,-0.1777,249.87,240.14
-Linear Regression,-7.9841,690.14,238.72
+Linear Regression,0.3439,6962.04,5589.41
+Random Forest,0.1773,7796.01,6518.29
+XGBoost,0.0033,8580.92,7263.63
