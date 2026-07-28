@@ -36,21 +36,21 @@ RetailIQ AI automates the complete analytics workflow so businesses can make dat
 
 # 🎯 Project Objectives
 
-* Generate realistic synthetic retail datasets
-* Clean and preprocess raw retail data
-* Engineer time-series features
-* Forecast future sales using multiple ML models
-* Explain predictions with SHAP Explainable AI
-* Segment customers using RFM + KMeans
-* Recommend products using Apriori Market Basket Analysis
-* Visualize everything inside one interactive dashboard
+Process real-world retail transaction data from the UCI Online Retail dataset
+Clean and preprocess raw transactional data
+Engineer meaningful time-series features for forecasting
+Forecast future sales using multiple ML models
+Explain model predictions using SHAP Explainable AI
+Segment customers using RFM analysis + KMeans clustering
+Recommend products using Apriori Market Basket Analysis
+Visualize all analytics inside one interactive Streamlit dashboard
 
 ---
 
 # 🏗️ System Architecture
 
 ```
-Raw Data Generation (Daksh)
+Real Dataset Loading (UCI Online Retail Dataset)
         │
         ▼
 Data Preprocessing (Akshay)
@@ -90,7 +90,7 @@ Interactive Streamlit Dashboard
 ```text
 retailiq-ai/
 ├── src/
-│   ├── data_generation.py
+│   ├── load_real_data.py
 │   ├── preprocessing.py
 │   ├── feature_engineering.py
 │   ├── forecasting.py
@@ -119,7 +119,7 @@ retailiq-ai/
 
 | Step | Script                   | Purpose                                                                 |
 | ---- | ------------------------ | ----------------------------------------------------------------------- |
-| 1    | `data_generation.py`     | Generate synthetic retail datasets                                      |
+| 1    | `load_real_data.py`      | Load and prepare real UCI Online Retail transaction dataset             |
 | 2    | `preprocessing.py`       | Clean data, remove duplicates, fill missing values, cap outliers        |
 | 3    | `feature_engineering.py` | Create lag, rolling and calendar features                               |
 | 4    | `forecasting.py`         | Train and compare Linear Regression, Random Forest, XGBoost and Prophet |
@@ -127,7 +127,6 @@ retailiq-ai/
 | 6    | `segmentation.py`        | Perform RFM analysis and KMeans clustering                              |
 | 7    | `recommendation.py`      | Generate Apriori association rules                                      |
 | 8    | `app.py`                 | Launch the interactive Streamlit dashboard                              |
-
 ---
 
 # 🚀 Installation
@@ -174,7 +173,7 @@ python -c "import pandas, sklearn, xgboost, prophet, shap, streamlit; print('All
 Run the scripts in the following order:
 
 ```bash
-python src/data_generation.py
+python src/load_real_data.py
 python src/preprocessing.py
 python src/feature_engineering.py
 python src/forecasting.py
