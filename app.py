@@ -1,282 +1,590 @@
 """
-app.py — RetailIQ Interactive Dashboard
-Streamlit entry point tying together forecasting, SHAP explainability,
-customer segmentation, and product recommendations — with live filters,
-sliders, and what-if controls (not just static charts).
+app.py — RetailIQ AI Dashboard
+Streamlit entry point tying together sales KPIs, forecasting, SHAP
+explainability, customer segmentation, and recommendations. Uses Plotly
+for interactive charts and includes a sidebar filter + a simple what-if
+forecast simulator.
 
 Run:
     streamlit run app.py
 
-Expects the pipeline to have already been run once:
-    python src/data_generation.py
+Expects the pipeline to have already been run once (see README):
+    python src/download_data.py
     python src/preprocessing.py
     python src/feature_engineering.py
     python src/forecasting.py
     python src/explainability.py
     python src/segmentation.py
-    python src/recommendation.py     # optional, bonus
+    python src/recommendation.py
 """
 
 import json
 from pathlib import Path
 
 import joblib
-import numpy as np
 import pandas as pd
-import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
-import shap
-
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-from mlxtend.frequent_patterns import apriori, association_rules
-from mlxtend.preprocessing import TransactionEncoder
+import streamlit as st
 
 BASE_DIR = Path(__file__).resolve().parent
-RAW_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 MODELS_DIR = BASE_DIR / "models"
 
-st.set_page_config(page_title="RetailIQ", layout="wide", page_icon="🛒")
+st.set_page_config(page_title="RetailIQ AI", layout="wide", page_icon="🛒")
+
+PRIMARY = "#4F6AF6"
+ACCENT = "#22C7A9"
+PLOTLY_TEMPLATE = "plotly_white"
+
+# Note: intentionally NOT using custom CSS for the KPI cards below. Custom
+# `st.markdown(..., unsafe_allow_html=True)` CSS is fragile — it can end up
+# invisible (white-on-white) depending on whether the viewer's Streamlit
+# theme is light or dark, since it fights the theme instead of using it.
+# `st.container(border=True)` is a built-in Streamlit primitive that always
+# adapts correctly to the active theme.
 
 
 # ---------------------------------------------------------------------------
-# Cached loaders
+# Cached loaders — Streamlit reruns the whole script on every interaction,
+# so anything reading from disk should be cached to keep the app snappy.
 # ---------------------------------------------------------------------------
 @st.cache_data
-def load_sales_clean():
-    return pd.read_csv(PROCESSED_DIR / "sales_clean.csv", parse_dates=["date"])
-
-
-@st.cache_data
-def load_features():
-    return pd.read_csv(PROCESSED_DIR / "features.csv", parse_dates=["date"])
-
-
-@st.cache_data
-def load_model_comparison():
-    return pd.read_csv(MODELS_DIR / "model_comparison.csv")
-
-
-@st.cache_data
-def load_segments():
-    return pd.read_csv(PROCESSED_DIR / "customer_segments.csv")
-
-
-@st.cache_data
-def load_shap_importance():
-    path = MODELS_DIR / "shap_feature_importance.csv"
-    return pd.read_csv(path) if path.exists() else None
-
-
-@st.cache_data
-def load_baskets_raw():
-    path = RAW_DIR / "basket_transactions.csv"
-    if not path.exists():
-        return None
-    df = pd.read_csv(path)
-    return df["items"].apply(lambda s: s.split(",")).tolist()
+def load_csv(name, parse_dates=None):
+    path = PROCESSED_DIR / name
+    return pd.read_csv(path, parse_dates=parse_dates) if path.exists() else None
 
 
 @st.cache_resource
-def load_all_models():
-    return joblib.load(MODELS_DIR / "all_models.pkl")
-
-
-@st.cache_resource
-def load_meta():
-    with open(MODELS_DIR / "best_model_name.json") as f:
-        return json.load(f)
-
-
-@st.cache_resource
-def get_shap_explainer(_model):
-    return shap.TreeExplainer(_model)
+def load_pickle(name):
+    path = MODELS_DIR / name
+    return joblib.load(path) if path.exists() else None
 
 
 def files_missing():
     required = [
+        PROCESSED_DIR / "daily_totals.csv",
         PROCESSED_DIR / "features.csv",
         PROCESSED_DIR / "sales_clean.csv",
         MODELS_DIR / "model_comparison.csv",
         PROCESSED_DIR / "customer_segments.csv",
-        MODELS_DIR / "all_models.pkl",
     ]
     return [str(p) for p in required if not p.exists()]
 
 
-# ---------------------------------------------------------------------------
-# Header
-# ---------------------------------------------------------------------------
-st.title("🛒 RetailIQ — Retail Data Science & ML Dashboard")
-st.caption("Sales forecasting · SHAP explainability · Customer segmentation · Recommendations")
+def download_button(df: pd.DataFrame, label: str, filename: str, key: str):
+    st.download_button(
+        label, df.to_csv(index=False).encode("utf-8"),
+        file_name=filename, mime="text/csv", key=key,
+    )
+
+
+st.title("🛒 RetailIQ AI")
+st.caption("Real transaction data (UCI Online Retail II) · Sales forecasting · SHAP explainability · Customer segmentation · Recommendations")
 
 missing = files_missing()
 if missing:
-    st.error("Pipeline outputs not found. Run the pipeline scripts first (see README.md).")
+    st.error("Pipeline outputs not found. Run these once from the project root before launching the dashboard:")
+    st.code(
+        "python src/download_data.py\n"
+        "python src/preprocessing.py\n"
+        "python src/feature_engineering.py\n"
+        "python src/forecasting.py\n"
+        "python src/explainability.py\n"
+        "python src/segmentation.py\n"
+        "python src/recommendation.py",
+        language="bash",
+    )
+    st.write("Missing files:")
     for m in missing:
         st.write(f"- `{m}`")
     st.stop()
 
-sales_df = load_sales_clean()
-features_df = load_features()
-comparison_df = load_model_comparison()
-segments_df = load_segments()
-importance_df = load_shap_importance()
-all_models = load_all_models()
-meta = load_meta()
-FEATURE_COLS = meta["feature_cols"]
+daily_full = load_csv("daily_totals.csv", parse_dates=["date"])
+sales_clean = load_csv("sales_clean.csv", parse_dates=["InvoiceDate"])
+segments = load_csv("customer_segments.csv")
 
 # ---------------------------------------------------------------------------
-# Sidebar — global filters (drive the Overview tab's drill-down)
+# Sidebar filters — date range + country. Only affects the Overview and
+# Sales Dashboard tabs (segmentation/forecasting/recommendations are
+# precomputed pipeline outputs and stay global, same as a real BI tool
+# where models aren't retrained on every filter click).
 # ---------------------------------------------------------------------------
 st.sidebar.header("🔎 Filters")
-stores = sorted(sales_df["store"].unique().tolist())
-categories = sorted(sales_df["category"].unique().tolist())
 
-sel_stores = st.sidebar.multiselect("Store", stores, default=stores)
-sel_categories = st.sidebar.multiselect("Category", categories, default=categories)
+min_date, max_date = daily_full["date"].min().date(), daily_full["date"].max().date()
+date_range = st.sidebar.date_input(
+    "Date range", value=(min_date, max_date), min_value=min_date, max_value=max_date
+)
+if isinstance(date_range, tuple) and len(date_range) == 2:
+    start_date, end_date = date_range
+else:
+    start_date, end_date = min_date, max_date
 
-min_date, max_date = sales_df["date"].min().date(), sales_df["date"].max().date()
-date_range = st.sidebar.slider(
-    "Date range",
-    min_value=min_date,
-    max_value=max_date,
-    value=(min_date, max_date),
-    format="YYYY-MM-DD",
+countries = ["All"] + sorted(sales_clean["Country"].dropna().unique().tolist()) if sales_clean is not None else ["All"]
+selected_country = st.sidebar.selectbox("Country", countries)
+
+st.sidebar.markdown("---")
+st.sidebar.caption(
+    "Filters apply to the Overview and Sales Dashboard tabs. Forecasting, "
+    "Segmentation, and Recommendations reflect the full trained pipeline."
 )
 
-filtered = sales_df[
-    (sales_df["store"].isin(sel_stores))
-    & (sales_df["category"].isin(sel_categories))
-    & (sales_df["date"].dt.date >= date_range[0])
-    & (sales_df["date"].dt.date <= date_range[1])
-]
+daily = daily_full[
+    (daily_full["date"].dt.date >= start_date) & (daily_full["date"].dt.date <= end_date)
+].copy()
 
-st.sidebar.caption(f"{len(filtered):,} rows match current filters")
+sales_filtered = sales_clean
+if sales_clean is not None:
+    sales_filtered = sales_clean[
+        (sales_clean["InvoiceDate"].dt.date >= start_date) & (sales_clean["InvoiceDate"].dt.date <= end_date)
+    ]
+    if selected_country != "All":
+        sales_filtered = sales_filtered[sales_filtered["Country"] == selected_country]
 
-tab_overview, tab_forecast, tab_explain, tab_segment, tab_recs, tab_whatif = st.tabs(
-    ["📊 Overview", "📈 Forecasting", "🔍 Explainability", "👥 Segmentation",
-     "🧺 Recommendations", "🧪 What-If Predictor"]
+# --- KPIs at top, visible on every tab ---
+total_revenue = sales_filtered["TotalPrice"].sum() if sales_filtered is not None else daily["revenue"].sum()
+total_units = sales_filtered["Quantity"].sum() if sales_filtered is not None else daily["units_sold"].sum()
+n_orders = sales_filtered["InvoiceNo"].nunique() if sales_filtered is not None else daily["num_invoices"].sum()
+aov = total_revenue / n_orders if n_orders else 0
+
+k1, k2, k3, k4, k5 = st.columns(5)
+with k1.container(border=True):
+    st.metric("💰 Total Revenue", f"${total_revenue:,.0f}")
+with k2.container(border=True):
+    st.metric("📦 Units Sold", f"{total_units:,.0f}")
+with k3.container(border=True):
+    st.metric("🧾 Orders", f"{n_orders:,.0f}")
+with k4.container(border=True):
+    st.metric("💳 Avg Order Value", f"${aov:,.2f}")
+with k5.container(border=True):
+    st.metric("👥 Customers", f"{segments['CustomerID'].nunique():,}" if segments is not None else "—")
+
+tab_overview, tab_sales, tab_top, tab_cohort, tab_forecast, tab_churn, tab_segment, tab_recs, tab_explain = st.tabs(
+    ["📊 Overview", "💰 Sales Dashboard", "🏆 Top Performers", "📅 Cohort Retention", "📈 Forecasting",
+     "⚠️ Churn Prediction", "👥 Customer Segmentation", "🧺 Recommendations", "🔍 SHAP Explainability"]
 )
 
-# ---------------------------------------------------------------------------
-# Overview tab
-# ---------------------------------------------------------------------------
+# --- Overview tab ---
 with tab_overview:
-    if filtered.empty:
-        st.warning("No data matches the current filters — widen your selection in the sidebar.")
-    else:
-        daily_f = filtered.groupby("date", as_index=False).agg(
-            units_sold=("units_sold", "sum"), revenue=("revenue", "sum")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        fig = px.line(daily, x="date", y="units_sold", template=PLOTLY_TEMPLATE,
+                       title="Daily Units Sold", color_discrete_sequence=[PRIMARY])
+        fig.update_layout(margin=dict(t=50, l=10, r=10, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+
+        fig2 = px.line(daily, x="date", y="revenue", template=PLOTLY_TEMPLATE,
+                        title="Daily Revenue", color_discrete_sequence=[ACCENT])
+        fig2.update_layout(margin=dict(t=50, l=10, r=10, b=10))
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with col2:
+        if sales_filtered is not None and len(sales_filtered) > 0:
+            by_country = (
+                sales_filtered.groupby("Country")["TotalPrice"].sum()
+                .sort_values(ascending=False).head(8).reset_index()
+            )
+            fig3 = px.pie(by_country, names="Country", values="TotalPrice", hole=0.5,
+                           template=PLOTLY_TEMPLATE, title="Revenue by Country (top 8)")
+            fig3.update_layout(margin=dict(t=50, l=10, r=10, b=10))
+            st.plotly_chart(fig3, use_container_width=True)
+
+        st.markdown("**Quick facts**")
+        st.markdown(
+            f"- {len(daily):,} days in selected range\n"
+            f"- {sales_filtered['Country'].nunique() if sales_filtered is not None else '—'} countries represented\n"
+            f"- Avg {total_units / max(len(daily), 1):,.0f} units/day"
         )
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Units Sold", f"{daily_f['units_sold'].sum():,.0f}")
-        col2.metric("Total Revenue", f"${daily_f['revenue'].sum():,.0f}")
-        col3.metric("Avg Daily Units", f"{daily_f['units_sold'].mean():,.0f}")
-        col4.metric("Days in Range", f"{len(daily_f):,}")
 
-        fig = px.line(daily_f, x="date", y="units_sold", title="Daily Units Sold (filtered)")
-        fig.update_xaxes(rangeslider_visible=True)
-        st.plotly_chart(fig, width='stretch')
+    st.divider()
+    st.subheader("📄 Executive Summary")
+    summary_path = BASE_DIR / "reports" / "executive_summary.md"
+    if summary_path.exists():
+        st.caption("Auto-generated from this pipeline's own outputs — real numbers, not placeholders.")
+        st.markdown(summary_path.read_text())
+        st.download_button(
+            "⬇ Download Executive Summary (Markdown)",
+            summary_path.read_text().encode("utf-8"),
+            file_name="executive_summary.md", mime="text/markdown", key="dl_summary",
+        )
+    else:
+        st.info("Run `python src/generate_report.py` to generate a plain-English business summary here.")
 
-        fig2 = px.line(daily_f, x="date", y="revenue", title="Daily Revenue (filtered)")
-        fig2.update_xaxes(rangeslider_visible=True)
-        st.plotly_chart(fig2, width='stretch')
+# --- Sales Dashboard tab ---
+with tab_sales:
+    features = load_csv("features.csv", parse_dates=["date"])
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            by_store = filtered.groupby("store", as_index=False)["units_sold"].sum()
-            st.plotly_chart(
-                px.bar(by_store, x="store", y="units_sold", title="Units Sold by Store", color="store"),
-                width='stretch',
+    daily_aov = daily.assign(avg_order_value=(daily["revenue"] / daily["num_invoices"].replace(0, pd.NA)))
+    fig = px.line(daily_aov, x="date", y="avg_order_value", template=PLOTLY_TEMPLATE,
+                  title="Average Order Value Over Time", color_discrete_sequence=[PRIMARY])
+    st.plotly_chart(fig, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = px.bar(daily, x="date", y="num_invoices", template=PLOTLY_TEMPLATE,
+                      title="Invoices per Day", color_discrete_sequence=[PRIMARY])
+        st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        fig = px.bar(daily, x="date", y="num_customers", template=PLOTLY_TEMPLATE,
+                      title="Active Customers per Day", color_discrete_sequence=[ACCENT])
+        st.plotly_chart(fig, use_container_width=True)
+
+    if features is not None:
+        monthly = features.assign(year_month=features["date"].dt.to_period("M").astype(str))
+        monthly_rev = monthly.groupby("year_month", as_index=False)["revenue"].sum()
+        fig = px.bar(monthly_rev, x="year_month", y="revenue", template=PLOTLY_TEMPLATE,
+                      title="Monthly Revenue", color_discrete_sequence=[PRIMARY])
+        st.plotly_chart(fig, use_container_width=True)
+
+    if sales_filtered is not None and len(sales_filtered) > 0:
+        st.subheader("Top Countries by Revenue")
+        top_countries = (
+            sales_filtered.groupby("Country")["TotalPrice"].sum()
+            .sort_values(ascending=False).head(10).reset_index()
+        )
+        fig = px.bar(top_countries, x="TotalPrice", y="Country", orientation="h",
+                      template=PLOTLY_TEMPLATE, color_discrete_sequence=[ACCENT])
+        fig.update_layout(yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig, use_container_width=True)
+        download_button(sales_filtered, "⬇ Download filtered transactions (CSV)", "filtered_transactions.csv", "dl_sales")
+
+# --- Top Performers tab ---
+with tab_top:
+    st.caption(
+        "Respects the Country and date-range filters in the sidebar — pick a country to drill "
+        "into that market's top products and top customers, or leave it on \"All\" for the "
+        "global picture."
+    )
+
+    if sales_filtered is None or len(sales_filtered) == 0:
+        st.warning("No data matches the current filters.")
+    else:
+        scope_label = selected_country if selected_country != "All" else "All Countries"
+
+        st.subheader(f"🌍 Top Areas by Revenue ({scope_label if selected_country != 'All' else 'global'})")
+        top_area_df = (
+            sales_filtered.groupby("Country")["TotalPrice"].sum()
+            .sort_values(ascending=False).head(10).reset_index()
+            .rename(columns={"TotalPrice": "revenue"})
+        )
+        if len(top_area_df) > 0:
+            leader = top_area_df.iloc[0]
+            st.info(f"📍 **{leader['Country']}** is the top-performing area, with "
+                    f"**${leader['revenue']:,.0f}** in revenue in the current filter range.")
+        fig_area = px.bar(top_area_df, x="revenue", y="Country", orientation="h",
+                           template=PLOTLY_TEMPLATE, color_discrete_sequence=[PRIMARY],
+                           title="Revenue by Area")
+        fig_area.update_layout(yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig_area, use_container_width=True)
+
+        st.divider()
+        st.subheader(f"📦 Top Products in {scope_label}")
+        col1, col2 = st.columns(2)
+        with col1:
+            top_products_qty = (
+                sales_filtered.groupby("Description")["Quantity"].sum()
+                .sort_values(ascending=False).head(10).reset_index()
             )
-        with col_b:
-            by_cat = filtered.groupby("category", as_index=False)["units_sold"].sum()
-            st.plotly_chart(
-                px.bar(by_cat, x="category", y="units_sold", title="Units Sold by Category", color="category"),
-                width='stretch',
+            fig_pq = px.bar(top_products_qty, x="Quantity", y="Description", orientation="h",
+                             template=PLOTLY_TEMPLATE, color_discrete_sequence=[ACCENT],
+                             title="By Units Sold")
+            fig_pq.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig_pq, use_container_width=True)
+        with col2:
+            top_products_rev = (
+                sales_filtered.groupby("Description")["TotalPrice"].sum()
+                .sort_values(ascending=False).head(10).reset_index()
+                .rename(columns={"TotalPrice": "revenue"})
             )
+            fig_pr = px.bar(top_products_rev, x="revenue", y="Description", orientation="h",
+                             template=PLOTLY_TEMPLATE, color_discrete_sequence=[PRIMARY],
+                             title="By Revenue")
+            fig_pr.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig_pr, use_container_width=True)
 
-        with st.expander("View filtered raw rows"):
-            st.dataframe(filtered, width='stretch')
-            st.download_button(
-                "Download filtered data as CSV",
-                filtered.to_csv(index=False).encode("utf-8"),
-                file_name="retailiq_filtered_sales.csv",
-                mime="text/csv",
+        st.divider()
+        st.subheader(f"👑 Top Customers in {scope_label}")
+        if "CustomerID" in sales_filtered.columns:
+            top_customers = (
+                sales_filtered.groupby("CustomerID")
+                .agg(revenue=("TotalPrice", "sum"),
+                     orders=("InvoiceNo", "nunique"),
+                     units=("Quantity", "sum"))
+                .sort_values("revenue", ascending=False)
+                .head(15)
+                .reset_index()
             )
+            top_customers["avg_order_value"] = (top_customers["revenue"] / top_customers["orders"]).round(2)
+            st.dataframe(top_customers, use_container_width=True)
+            download_button(top_customers, "⬇ Download top customers (CSV)",
+                             f"top_customers_{scope_label.replace(' ', '_')}.csv", "dl_top_customers")
 
-# ---------------------------------------------------------------------------
-# Forecasting tab — live horizon slider, re-forecasts on the fly
-# ---------------------------------------------------------------------------
+            fig_cust = px.bar(top_customers.head(10), x="revenue", y="CustomerID", orientation="h",
+                               template=PLOTLY_TEMPLATE, color_discrete_sequence=[ACCENT],
+                               title=f"Top 10 Customers by Revenue — {scope_label}")
+            fig_cust.update_layout(yaxis=dict(autorange="reversed", type="category"))
+            st.plotly_chart(fig_cust, use_container_width=True)
+        else:
+            st.info("Customer ID column not available in this data.")
+
+# --- Cohort Retention tab ---
+with tab_cohort:
+    cohort_df = load_csv("cohort_retention.csv")
+    st.subheader("Monthly Cohort Retention (%)")
+    st.caption(
+        "Each row is a group of customers who made their first purchase in that "
+        "month. Each column shows what % of that group came back N months later."
+    )
+    if cohort_df is not None and len(cohort_df) > 0:
+        heat_df = cohort_df.set_index("cohort_month")
+        heat_df.columns = [f"Month {c}" for c in heat_df.columns]
+        fig = px.imshow(
+            heat_df, text_auto=".0f", aspect="auto", color_continuous_scale="Blues",
+            template=PLOTLY_TEMPLATE, title="Retention Heatmap",
+        )
+        fig.update_layout(height=450)
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(cohort_df, use_container_width=True)
+        download_button(cohort_df, "⬇ Download cohort table (CSV)", "cohort_retention.csv", "dl_cohort")
+        with st.expander("Why cohort retention matters"):
+            st.markdown(
+                "It separates *how many new customers you're getting* from *how well "
+                "you're keeping them* — two different problems that a single revenue "
+                "number hides. A shrinking 'Month 1' column across cohorts is an early "
+                "warning sign, well before total revenue actually drops."
+            )
+    else:
+        st.info("Run `python src/cohort_analysis.py` to generate this table.")
+
+# --- Forecasting tab ---
 with tab_forecast:
+    comparison_df = pd.read_csv(MODELS_DIR / "model_comparison.csv")
+
     st.subheader("Model Comparison")
-    st.dataframe(comparison_df, width='stretch')
+    st.dataframe(comparison_df, use_container_width=True)
+
     best_model_name = comparison_df.iloc[0]["model"]
     st.success(f"Best performing model: **{best_model_name}** (highest R²)")
 
-    fig_r2 = px.bar(comparison_df, x="model", y="R2", color="model", title="R² by Model")
-    st.plotly_chart(fig_r2, width='stretch')
+    col_a, col_b = st.columns(2)
+    with col_a:
+        fig = px.bar(comparison_df, x="model", y="R2", template=PLOTLY_TEMPLATE,
+                      title="R² by Model (higher is better)", color_discrete_sequence=[PRIMARY])
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        fig = px.bar(comparison_df, x="model", y="RMSE", template=PLOTLY_TEMPLATE,
+                      title="RMSE by Model (lower is better)", color_discrete_sequence=[ACCENT])
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.divider()
-    st.subheader("Live Forecast")
-
-    horizon = st.slider("Forecast horizon (days ahead)", min_value=7, max_value=90, value=30, step=7)
-
-    if "Prophet" in all_models:
-        prophet_model = all_models["Prophet"]
-        future = prophet_model.make_future_dataframe(periods=horizon)
-        forecast = prophet_model.predict(future)
-
-        daily_hist = features_df[["date", "units_sold"]].rename(columns={"units_sold": "actual"})
-        forecast_plot = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].rename(columns={"ds": "date"})
-
-        fig_fc = go.Figure()
-        fig_fc.add_trace(go.Scatter(x=daily_hist["date"], y=daily_hist["actual"],
-                                     mode="lines", name="Actual", line=dict(color="#1f77b4")))
-        fig_fc.add_trace(go.Scatter(x=forecast_plot["date"], y=forecast_plot["yhat"],
-                                     mode="lines", name="Forecast (Prophet)", line=dict(color="#ff7f0e")))
-        fig_fc.add_trace(go.Scatter(
-            x=list(forecast_plot["date"]) + list(forecast_plot["date"][::-1]),
-            y=list(forecast_plot["yhat_upper"]) + list(forecast_plot["yhat_lower"][::-1]),
-            fill="toself", fillcolor="rgba(255,127,14,0.15)", line=dict(color="rgba(255,255,255,0)"),
-            name="Confidence interval", showlegend=True,
-        ))
-        fig_fc.update_layout(title=f"Prophet Forecast — next {horizon} days", xaxis_title="Date", yaxis_title="Units Sold")
-        st.plotly_chart(fig_fc, width='stretch')
-
-        with st.expander("View forecast values"):
-            st.dataframe(
-                forecast_plot.tail(horizon).rename(
-                    columns={"yhat": "forecast", "yhat_lower": "lower_bound", "yhat_upper": "upper_bound"}
-                ),
-                width='stretch',
-            )
-    else:
-        st.info("Prophet model not found in models/all_models.pkl — re-run src/forecasting.py.")
-
-    with st.expander("What do R² / RMSE / MAE mean?"):
+    with st.expander("What do these metrics mean?"):
         st.markdown(
-            "- **R²**: proportion of variance in sales explained by the model (closer to 1 is better)\n"
+            "- **R²**: proportion of variance in daily units sold explained by the model\n"
             "- **RMSE**: root mean squared error — penalizes big misses more\n"
-            "- **MAE**: mean absolute error — easier to interpret directly"
+            "- **MAE**: mean absolute error — easier to interpret directly in units"
         )
 
-# ---------------------------------------------------------------------------
-# Explainability tab
-# ---------------------------------------------------------------------------
+    st.divider()
+    st.subheader("🔮 What-If Forecast Simulator")
+    st.caption(
+        "Keeps the most recent known trend (lag/rolling features) fixed, and shows "
+        "how the best model's prediction changes if the *next* day falls on a "
+        "different day of week or time of month — a quick sensitivity check, not a "
+        "true multi-day forecast."
+    )
+
+    with open(MODELS_DIR / "best_model_name.json") as f:
+        meta = json.load(f)
+    feature_cols = meta["feature_cols"]
+    best_model = load_pickle("best_model.pkl")
+    features_df = load_csv("features.csv", parse_dates=["date"])
+
+    if best_model is not None and features_df is not None and len(features_df) > 0:
+        last_row = features_df.iloc[-1]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            sim_dow = st.selectbox(
+                "Day of week", options=list(range(7)),
+                format_func=lambda x: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][x],
+            )
+            sim_weekend = 1 if sim_dow >= 5 else 0
+        with col2:
+            sim_month_start = st.checkbox("Is month start?", value=bool(last_row.get("is_month_start", 0)))
+            sim_month_end = st.checkbox("Is month end?", value=bool(last_row.get("is_month_end", 0)))
+
+        sim_row = last_row.copy()
+        sim_row["day_of_week"] = sim_dow
+        sim_row["is_weekend"] = sim_weekend
+        sim_row["is_month_start"] = int(sim_month_start)
+        sim_row["is_month_end"] = int(sim_month_end)
+
+        X_sim = pd.DataFrame([sim_row[feature_cols]])
+        prediction = best_model.predict(X_sim)[0]
+
+        st.metric("Predicted units sold", f"{prediction:,.0f}",
+                   delta=f"{prediction - last_row['units_sold']:+.0f} vs. last known day")
+    else:
+        st.info("Run the full pipeline first to enable the simulator.")
+
+# --- Churn Prediction tab ---
+with tab_churn:
+    churn_df = load_csv("churn_predictions.csv")
+    churn_comparison_path = MODELS_DIR / "churn_model_comparison.csv"
+
+    if churn_df is None or not churn_comparison_path.exists():
+        st.info("Run `python src/churn_prediction.py` to generate churn predictions.")
+    else:
+        churn_comparison = pd.read_csv(churn_comparison_path)
+
+        st.caption(
+            "Predicts which customers are likely to stop buying, using only "
+            "behavior from *before* a cutoff date to predict what happens "
+            "*after* it — the same temporal-holdout approach used for real "
+            "churn models, not a same-day leak."
+        )
+
+        st.subheader("Model Comparison")
+        st.dataframe(churn_comparison, use_container_width=True)
+        best_churn_model = churn_comparison.iloc[0]["model"]
+        st.success(f"Best model: **{best_churn_model}** (highest ROC-AUC)")
+
+        col1, col2, col3 = st.columns(3)
+        risk_counts = churn_df["risk_level"].value_counts()
+        col1.metric("🔴 High Risk", f"{risk_counts.get('High', 0):,}")
+        col2.metric("🟡 Medium Risk", f"{risk_counts.get('Medium', 0):,}")
+        col3.metric("🟢 Low Risk", f"{risk_counts.get('Low', 0):,}")
+
+        fig = px.histogram(churn_df, x="churn_probability", nbins=20, template=PLOTLY_TEMPLATE,
+                            title="Churn Probability Distribution", color_discrete_sequence=[PRIMARY])
+        st.plotly_chart(fig, use_container_width=True)
+
+        importance_path = MODELS_DIR / "churn_feature_importance.csv"
+        if importance_path.exists():
+            churn_importance = pd.read_csv(importance_path)
+            fig = px.bar(churn_importance, x="importance", y="feature", orientation="h",
+                          template=PLOTLY_TEMPLATE, title="What drives the churn prediction?",
+                          color_discrete_sequence=[ACCENT])
+            fig.update_layout(yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("At-Risk Customers")
+        risk_filter = st.selectbox("Filter by risk level", ["All", "High", "Medium", "Low"])
+        display_df = churn_df if risk_filter == "All" else churn_df[churn_df["risk_level"] == risk_filter]
+        st.dataframe(
+            display_df[["CustomerID", "recency", "frequency", "monetary", "churn_probability", "risk_level"]],
+            use_container_width=True,
+        )
+        download_button(display_df, "⬇ Download churn predictions (CSV)", "churn_predictions.csv", "dl_churn")
+
+        potential_loss = display_df[display_df["risk_level"] == "High"]["monetary"].sum() if risk_filter == "All" else None
+        if potential_loss:
+            st.warning(f"💸 High-risk customers represent **${potential_loss:,.0f}** in historical spend — worth a retention campaign.")
+
+        with st.expander("How is 'churn' defined here?"):
+            st.markdown(
+                "A customer is labeled **churned** if they made zero purchases in the "
+                "final 90 days of the dataset, based on their RFM profile from *before* "
+                "that window. This avoids the most common churn-modeling mistake — using "
+                "information from the future to predict the future."
+            )
+
+# --- Customer Segmentation tab ---
+with tab_segment:
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        seg_counts = segments["segment"].value_counts().reset_index()
+        seg_counts.columns = ["segment", "count"]
+        fig = px.bar(seg_counts, x="segment", y="count", template=PLOTLY_TEMPLATE,
+                      title="Segment Sizes", color="segment")
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        fig = px.pie(seg_counts, names="segment", values="count", hole=0.5,
+                      template=PLOTLY_TEMPLATE, title="Segment Share")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Segment Profiles (mean R/F/M)")
+    profile = segments.groupby("segment")[["recency", "frequency", "monetary"]].mean().round(1).reset_index()
+    fig = px.bar(profile, x="segment", y="monetary", template=PLOTLY_TEMPLATE,
+                  title="Average Monetary Value by Segment", color_discrete_sequence=[PRIMARY])
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(profile, use_container_width=True)
+
+    st.subheader("Customer-Level Detail")
+    selected_segment = st.selectbox("Filter by segment", ["All"] + sorted(segments["segment"].unique().tolist()))
+    detail_df = segments if selected_segment == "All" else segments[segments["segment"] == selected_segment]
+    st.dataframe(detail_df, use_container_width=True)
+    download_button(detail_df, "⬇ Download segment data (CSV)", "customer_segments.csv", "dl_segments")
+
+    elbow_png = MODELS_DIR / "elbow_plot.png"
+    if elbow_png.exists():
+        with st.expander("How was the number of clusters (k) chosen?"):
+            st.image(str(elbow_png), caption="Elbow method (inertia) + silhouette score by k")
+
+    with st.expander("What is RFM?"):
+        st.markdown(
+            "- **Recency**: days since the customer's last purchase (lower = more recently active)\n"
+            "- **Frequency**: number of distinct orders placed\n"
+            "- **Monetary**: total amount spent\n\n"
+            "Each customer is scored 1–5 on each dimension, then clustered with KMeans into "
+            "business-friendly segments like Champions, Loyal Customers, and At Risk."
+        )
+
+# --- Recommendations tab ---
+with tab_recs:
+    rules_df = load_csv("association_rules.csv")
+    popular_df = load_csv("popular_products.csv")
+    revenue_df = load_csv("top_revenue_products.csv")
+    segment_top_df = load_csv("segment_top_products.csv")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Popular Products")
+        if popular_df is not None:
+            fig = px.bar(popular_df.head(10), x="Quantity", y="Description", orientation="h",
+                          template=PLOTLY_TEMPLATE, color_discrete_sequence=[PRIMARY])
+            fig.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        st.subheader("Top Revenue Products")
+        if revenue_df is not None:
+            fig = px.bar(revenue_df.head(10), x="revenue", y="Description", orientation="h",
+                          template=PLOTLY_TEMPLATE, color_discrete_sequence=[ACCENT])
+            fig.update_layout(yaxis=dict(autorange="reversed"), height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Frequently Bought Together (Apriori)")
+    if rules_df is not None and len(rules_df) > 0:
+        st.dataframe(rules_df, use_container_width=True)
+        download_button(rules_df, "⬇ Download association rules (CSV)", "association_rules.csv", "dl_rules")
+        with st.expander("What do support / confidence / lift mean?"):
+            st.markdown(
+                "- **Support**: how often this item combination appears across all baskets\n"
+                "- **Confidence**: given the antecedent was bought, how often the consequent was too\n"
+                "- **Lift**: how much more likely the consequent is given the antecedent, vs. random "
+                "chance (lift > 1 means a real association)"
+            )
+    else:
+        st.info("No association rules found at the current support/confidence thresholds.")
+
+    if segment_top_df is not None and len(segment_top_df) > 0:
+        st.subheader("Top Products by Customer Segment")
+        chosen = st.selectbox("Segment", sorted(segment_top_df["segment"].unique().tolist()), key="seg_top")
+        st.dataframe(segment_top_df[segment_top_df["segment"] == chosen], use_container_width=True)
+
+# --- SHAP Explainability tab ---
 with tab_explain:
+    importance_path = MODELS_DIR / "shap_feature_importance.csv"
+    importance_df = pd.read_csv(importance_path) if importance_path.exists() else None
+
     st.subheader("SHAP Feature Importance")
     if importance_df is not None:
-        top_n = st.slider("Show top N features", min_value=3, max_value=len(importance_df),
-                           value=min(10, len(importance_df)))
-        top_imp = importance_df.head(top_n)
-        fig_imp = px.bar(top_imp, x="mean_abs_shap", y="feature", orientation="h",
-                          title="Mean |SHAP value| by feature")
-        fig_imp.update_layout(yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig_imp, width='stretch')
+        fig = px.bar(importance_df.head(15), x="mean_abs_shap", y="feature", orientation="h",
+                      template=PLOTLY_TEMPLATE, color_discrete_sequence=[PRIMARY],
+                      title="Mean |SHAP value| per feature")
+        fig.update_layout(yaxis=dict(autorange="reversed"), height=450)
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(importance_df, use_container_width=True)
     else:
         st.warning("Run `python src/explainability.py` to generate SHAP results.")
 
@@ -292,196 +600,10 @@ with tab_explain:
 
     with st.expander("What is SHAP, in plain language?"):
         st.markdown(
-            "SHAP shows how much each feature pushed a single prediction up or down relative "
-            "to the average prediction. Try the **What-If Predictor** tab to see a live SHAP "
-            "waterfall for a scenario you build yourself."
-        )
-
-# ---------------------------------------------------------------------------
-# Segmentation tab — live K slider, reruns KMeans on the fly
-# ---------------------------------------------------------------------------
-with tab_segment:
-    st.subheader("Live Re-clustering")
-    k = st.slider("Number of clusters (K)", min_value=2, max_value=8, value=4)
-
-    rfm_cols = ["recency", "frequency", "monetary"]
-    X = segments_df[rfm_cols]
-    X_scaled = StandardScaler().fit_transform(X)
-    km = KMeans(n_clusters=k, random_state=42, n_init=10)
-    live_clusters = km.fit_predict(X_scaled)
-
-    live_df = segments_df.copy()
-    live_df["live_cluster"] = live_clusters
-    rank = live_df.groupby("live_cluster")["RFM_score"].mean().sort_values(ascending=False).index.tolist()
-    label_pool = ["VIP", "Loyal", "Potential Loyalist", "Needs Attention", "At Risk", "Low Value", "Dormant", "New"]
-    labels = label_pool[:k] if k <= len(label_pool) else [f"Segment {i}" for i in range(k)]
-    label_map = {c: labels[i] for i, c in enumerate(rank)}
-    live_df["segment"] = live_df["live_cluster"].map(label_map)
-
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        seg_counts = live_df["segment"].value_counts().reset_index()
-        seg_counts.columns = ["segment", "count"]
-        st.plotly_chart(px.bar(seg_counts, x="segment", y="count", color="segment", title="Segment Sizes"),
-                         width='stretch')
-    with col_b:
-        fig_scatter = px.scatter(
-            live_df, x="recency", y="monetary", color="segment", size="frequency",
-            hover_data=["customer_id", "frequency"],
-            title="Recency vs Monetary (bubble size = frequency)",
-        )
-        st.plotly_chart(fig_scatter, width='stretch')
-
-    st.subheader("Click a segment to filter the customer table")
-    chosen_segment = st.radio("Segment", ["All"] + labels, horizontal=True)
-    table = live_df if chosen_segment == "All" else live_df[live_df["segment"] == chosen_segment]
-    st.dataframe(table[["customer_id", "recency", "frequency", "monetary", "RFM_score", "segment"]],
-                 width='stretch')
-    st.download_button(
-        "Download this segment view as CSV",
-        table.to_csv(index=False).encode("utf-8"),
-        file_name="retailiq_segments.csv",
-        mime="text/csv",
-    )
-
-    profile = live_df.groupby("segment")[rfm_cols].mean().round(1)
-    st.subheader("Segment Profiles (mean R/F/M)")
-    st.dataframe(profile, width='stretch')
-
-    with st.expander("What is RFM / how is K chosen?"):
-        st.markdown(
-            "- **Recency**: days since last purchase (lower = more active)\n"
-            "- **Frequency**: number of purchases\n"
-            "- **Monetary**: total amount spent\n\n"
-            "Drag the K slider above to see how segments split differently — in practice, K is "
-            "chosen with the elbow method (see `models/elbow_plot.png`), but this live view lets "
-            "you sanity-check alternative values."
-        )
-
-# ---------------------------------------------------------------------------
-# Recommendations tab — live support/confidence sliders, reruns Apriori
-# ---------------------------------------------------------------------------
-with tab_recs:
-    st.subheader("Live Association Rule Mining (Apriori)")
-    transactions = load_baskets_raw()
-
-    if transactions is None:
-        st.info("No basket data found — run `python src/data_generation.py` and "
-                 "`python src/recommendation.py` first.")
-    else:
-        col_a, col_b = st.columns(2)
-        with col_a:
-            min_support = st.slider("Minimum support", 0.01, 0.20, 0.03, step=0.01)
-        with col_b:
-            min_confidence = st.slider("Minimum confidence", 0.10, 0.90, 0.30, step=0.05)
-
-        te = TransactionEncoder()
-        te_array = te.fit(transactions).transform(transactions)
-        basket_df = pd.DataFrame(te_array, columns=te.columns_)
-        frequent_itemsets = apriori(basket_df, min_support=min_support, use_colnames=True)
-
-        if frequent_itemsets.empty:
-            st.warning("No frequent itemsets at this support level — try lowering it.")
-        else:
-            rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
-            if rules.empty:
-                st.warning("No rules at this confidence level — try lowering it.")
-            else:
-                rules["antecedents"] = rules["antecedents"].apply(lambda x: ", ".join(sorted(x)))
-                rules["consequents"] = rules["consequents"].apply(lambda x: ", ".join(sorted(x)))
-                rules = rules.sort_values(["confidence", "support"], ascending=False).reset_index(drop=True)
-                display_cols = ["antecedents", "consequents", "support", "confidence", "lift"]
-
-                st.dataframe(rules[display_cols], width='stretch')
-                st.plotly_chart(
-                    px.scatter(rules, x="support", y="confidence", size="lift", color="lift",
-                               hover_data=["antecedents", "consequents"],
-                               title="Rules: support vs confidence (bubble size/color = lift)"),
-                    width='stretch',
-                )
-
-        with st.expander("What do support / confidence / lift mean?"):
-            st.markdown(
-                "- **Support**: how often this item combination appears across all baskets\n"
-                "- **Confidence**: given the antecedent was bought, how often the consequent was too\n"
-                "- **Lift**: how much more likely the consequent is given the antecedent, vs. random "
-                "chance (lift > 1 means a real association)"
-            )
-
-# ---------------------------------------------------------------------------
-# What-If Predictor tab — build a custom scenario, get a live prediction + SHAP
-# ---------------------------------------------------------------------------
-with tab_whatif:
-    st.subheader("Build a Scenario")
-    st.caption("Adjust the inputs below to simulate a day and get a live prediction from the XGBoost model.")
-
-    if "XGBoost" not in all_models:
-        st.warning("XGBoost model not found — re-run `python src/forecasting.py`.")
-    else:
-        xgb_model = all_models["XGBoost"]
-        stats = features_df[FEATURE_COLS].describe()
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            day_of_week = st.selectbox(
-                "Day of week", options=list(range(7)),
-                format_func=lambda x: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][x], index=5,
-            )
-            month = st.slider("Month", 1, 12, 12)
-            is_weekend = 1 if day_of_week >= 5 else 0
-        with col2:
-            lag_1 = st.slider("Sales yesterday (lag_1)", int(stats.loc["min", "lag_1"]),
-                               int(stats.loc["max", "lag_1"]), int(stats.loc["mean", "lag_1"]))
-            lag_7 = st.slider("Sales 7 days ago (lag_7)", int(stats.loc["min", "lag_7"]),
-                               int(stats.loc["max", "lag_7"]), int(stats.loc["mean", "lag_7"]))
-            rolling_mean_7 = st.slider("7-day rolling avg", int(stats.loc["min", "rolling_mean_7"]),
-                                        int(stats.loc["max", "rolling_mean_7"]), int(stats.loc["mean", "rolling_mean_7"]))
-        with col3:
-            is_month_start = st.checkbox("Month start")
-            is_month_end = st.checkbox("Month end")
-            is_promo_season = st.checkbox("Holiday season boost (Nov/Dec pattern)", value=(month in (11, 12)))
-
-        row = {c: float(stats.loc["mean", c]) for c in FEATURE_COLS}
-        row.update({
-            "day_of_week": day_of_week,
-            "month": month,
-            "is_weekend": is_weekend,
-            "lag_1": lag_1,
-            "lag_7": lag_7,
-            "rolling_mean_7": rolling_mean_7,
-            "is_month_start": int(is_month_start),
-            "is_month_end": int(is_month_end),
-        })
-        if is_promo_season:
-            row["month"] = 12
-
-        X_input = pd.DataFrame([row])[FEATURE_COLS]
-        prediction = xgb_model.predict(X_input)[0]
-
-        st.divider()
-        st.metric("Predicted Units Sold", f"{prediction:,.0f}")
-
-        explainer = get_shap_explainer(xgb_model)
-        shap_val = explainer(X_input)
-
-        contrib_df = pd.DataFrame({
-            "feature": FEATURE_COLS,
-            "shap_value": shap_val.values[0],
-        }).sort_values("shap_value", key=abs, ascending=False).head(10)
-
-        fig_contrib = px.bar(
-            contrib_df, x="shap_value", y="feature", orientation="h",
-            color="shap_value", color_continuous_scale="RdBu",
-            title="Why this prediction: top feature contributions (SHAP)",
-        )
-        fig_contrib.update_layout(yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig_contrib, width='stretch')
-
-        st.caption(
-            "Positive (red) values push the prediction up; negative (blue) values pull it down, "
-            "relative to the average forecast."
+            "SHAP (SHapley Additive exPlanations) shows how much each feature pushed a "
+            "single prediction up or down relative to the average prediction. It turns a "
+            "'black box' model into something a business user can question and trust."
         )
 
 st.divider()
-st.caption("RetailIQ · interactive dashboard — filters, live re-forecasting, live re-clustering, "
-           "live rule mining, and a what-if predictor with on-demand SHAP explanations")
+st.caption("RetailIQ AI · Real transaction data (Online Retail II, UCI) · Streamlit + Plotly dashboard")

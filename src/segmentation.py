@@ -1,86 +1,104 @@
 """
 segmentation.py
-Builds RFM (Recency, Frequency, Monetary) scores per customer, then clusters
-customers with KMeans into labeled segments (VIP, Loyal, At Risk, New/Low-Value).
+Clusters customers into business-friendly segments using their RFM profile
+(Recency, Frequency, Monetary), computed in feature_engineering.py.
+
+Number of clusters (k) is chosen using both the elbow method (inertia) and
+the silhouette score, so the choice isn't just eyeballed off one chart.
 
 Run:
     python src/segmentation.py
 Input:
-    data/raw/customer_transactions.csv
+    data/processed/customer_features.csv
 Output:
     data/processed/customer_segments.csv
     models/kmeans_model.pkl
     models/elbow_plot.png
 """
 
+import logging
+from pathlib import Path
+
 import joblib
-import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from pathlib import Path
-
+import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-RAW_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 MODELS_DIR = BASE_DIR / "models"
+MODELS_DIR.mkdir(exist_ok=True)
+
+RFM_COLS = ["recency", "frequency", "monetary"]
+K_RANGE = range(2, 9)
+
+# Ordered best -> worst; used when labeling clusters by their mean RFM rank.
+LABEL_POOL = [
+    "Champions", "Loyal Customers", "Big Spenders",
+    "Potential Loyalists", "At Risk", "Lost Customers",
+]
 
 
-def load_transactions():
-    df = pd.read_csv(RAW_DIR / "customer_transactions.csv", parse_dates=["transaction_date"])
+def load_customer_features() -> pd.DataFrame:
+    return pd.read_csv(PROCESSED_DIR / "customer_features.csv")
+
+
+def score_rfm(df: pd.DataFrame) -> pd.DataFrame:
+    """Quintile-score each RFM dimension 1-5 (5 = best) — human-readable in the dashboard."""
+    # Rank first, THEN qcut on the ranks (not the raw values). Real data has
+    # many tied recency/monetary values (e.g. many customers active "7 days
+    # ago"); qcut on raw values with ties can collapse bins below 5 and then
+    # crash because `labels` still expects exactly 5. Ranking guarantees
+    # unique values going into qcut, so this never happens, regardless of
+    # how many ties the real dataset has.
+    df["R_score"] = pd.qcut(df["recency"].rank(method="first"), 5, labels=[5, 4, 3, 2, 1]).astype(int)
+    df["F_score"] = pd.qcut(df["frequency"].rank(method="first"), 5, labels=[1, 2, 3, 4, 5]).astype(int)
+    df["M_score"] = pd.qcut(df["monetary"].rank(method="first"), 5, labels=[1, 2, 3, 4, 5]).astype(int)
+    df["RFM_score"] = df["R_score"] + df["F_score"] + df["M_score"]
     return df
 
 
-def compute_rfm(df, snapshot_date=None):
-    """Recency = days since last purchase (lower is better).
-    Frequency = number of transactions.
-    Monetary = total amount spent."""
-    if snapshot_date is None:
-        snapshot_date = df["transaction_date"].max() + pd.Timedelta(days=1)
-
-    rfm = df.groupby("customer_id").agg(
-        recency=("transaction_date", lambda x: (snapshot_date - x.max()).days),
-        frequency=("transaction_date", "count"),
-        monetary=("amount", "sum"),
-    ).reset_index()
-
-    return rfm
-
-
-def score_rfm(rfm):
-    """Quintile-score each dimension 1-5 (5 = best) so it's human-readable in the dashboard."""
-    rfm["R_score"] = pd.qcut(rfm["recency"], 5, labels=[5, 4, 3, 2, 1]).astype(int)
-    rfm["F_score"] = pd.qcut(rfm["frequency"].rank(method="first"), 5, labels=[1, 2, 3, 4, 5]).astype(int)
-    rfm["M_score"] = pd.qcut(rfm["monetary"], 5, labels=[1, 2, 3, 4, 5]).astype(int)
-    rfm["RFM_score"] = rfm["R_score"] + rfm["F_score"] + rfm["M_score"]
-    return rfm
-
-
-def find_optimal_k(X_scaled, k_range=range(2, 9)):
-    """Elbow method: track inertia (within-cluster sum of squares) as k grows."""
-    inertias = []
+def find_optimal_k(X_scaled, k_range=K_RANGE):
+    """Elbow method (inertia) + silhouette score, plotted side by side.
+    We still fit the final model with a fixed, sensible k (see cluster_customers)
+    rather than fully automating k selection — that keeps cluster count stable
+    and easy to explain, while the plot documents *why* that k is reasonable."""
+    inertias, silhouettes = [], []
     for k in k_range:
         km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        km.fit(X_scaled)
+        labels = km.fit_predict(X_scaled)
         inertias.append(km.inertia_)
+        silhouettes.append(silhouette_score(X_scaled, labels))
 
-    plt.figure(figsize=(7, 4))
-    plt.plot(list(k_range), inertias, marker="o")
-    plt.xlabel("Number of clusters (k)")
-    plt.ylabel("Inertia")
-    plt.title("Elbow Method for Optimal k")
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    axes[0].plot(list(k_range), inertias, marker="o")
+    axes[0].set_xlabel("Number of clusters (k)")
+    axes[0].set_ylabel("Inertia")
+    axes[0].set_title("Elbow Method")
+
+    axes[1].plot(list(k_range), silhouettes, marker="o", color="darkorange")
+    axes[1].set_xlabel("Number of clusters (k)")
+    axes[1].set_ylabel("Silhouette Score")
+    axes[1].set_title("Silhouette Score by k")
+
     plt.tight_layout()
     plt.savefig(MODELS_DIR / "elbow_plot.png", dpi=150)
     plt.close()
-    return inertias
+
+    best_k_by_silhouette = list(k_range)[int(pd.Series(silhouettes).idxmax())]
+    logger.info(f"  silhouette score suggests k={best_k_by_silhouette}")
+    return inertias, silhouettes, best_k_by_silhouette
 
 
-def cluster_customers(rfm, n_clusters=4):
-    features = rfm[["recency", "frequency", "monetary"]]
+def cluster_customers(rfm: pd.DataFrame, n_clusters=5):
+    features = rfm[RFM_COLS]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(features)
 
@@ -92,15 +110,14 @@ def cluster_customers(rfm, n_clusters=4):
     return rfm, kmeans, scaler
 
 
-def label_clusters(rfm):
+def label_clusters(rfm: pd.DataFrame):
     """Rank clusters by mean RFM_score and assign business-friendly labels.
-    Highest combined score = VIP, lowest = At Risk / Low Value."""
+    Highest combined score = best customers, lowest = churn risk."""
     cluster_rank = (
         rfm.groupby("cluster")["RFM_score"].mean().sort_values(ascending=False).index.tolist()
     )
     n = len(cluster_rank)
-    label_pool = ["VIP", "Loyal", "Potential Loyalist", "At Risk", "Low Value"]
-    labels = label_pool[:n] if n <= len(label_pool) else [f"Segment {i}" for i in range(n)]
+    labels = LABEL_POOL[:n] if n <= len(LABEL_POOL) else [f"Segment {i}" for i in range(n)]
 
     label_map = {cluster_id: labels[i] for i, cluster_id in enumerate(cluster_rank)}
     rfm["segment"] = rfm["cluster"].map(label_map)
@@ -108,28 +125,29 @@ def label_clusters(rfm):
 
 
 if __name__ == "__main__":
-    print("Loading customer transactions...")
-    txns = load_transactions()
-    print(f"  {len(txns)} transactions, {txns['customer_id'].nunique()} unique customers")
+    logger.info("Loading customer features...")
+    cust = load_customer_features()
+    logger.info(f"  {len(cust):,} customers")
 
-    print("Computing RFM...")
-    rfm = compute_rfm(txns)
-    rfm = score_rfm(rfm)
+    logger.info("Scoring RFM...")
+    cust = score_rfm(cust)
 
-    print("Clustering with KMeans...")
-    rfm, kmeans_model, scaler = cluster_customers(rfm, n_clusters=4)
-    rfm, label_map = label_clusters(rfm)
+    logger.info("Clustering with KMeans...")
+    cust, kmeans_model, scaler = cluster_customers(cust, n_clusters=5)
+    cust, label_map = label_clusters(cust)
 
-    print("\nSegment sizes:")
-    print(rfm["segment"].value_counts().to_string())
+    logger.info("\nSegment sizes:\n" + cust["segment"].value_counts().to_string())
+    logger.info(
+        "\nSegment profile (mean R/F/M):\n"
+        + cust.groupby("segment")[RFM_COLS].mean().round(1).to_string()
+    )
 
-    print("\nSegment profile (mean R/F/M):")
-    print(rfm.groupby("segment")[["recency", "frequency", "monetary"]].mean().round(1).to_string())
+    cust.to_csv(PROCESSED_DIR / "customer_segments.csv", index=False)
+    joblib.dump(
+        {"kmeans": kmeans_model, "scaler": scaler, "label_map": label_map},
+        MODELS_DIR / "kmeans_model.pkl",
+    )
 
-    rfm.to_csv(PROCESSED_DIR / "customer_segments.csv", index=False)
-    joblib.dump({"kmeans": kmeans_model, "scaler": scaler, "label_map": label_map},
-                MODELS_DIR / "kmeans_model.pkl")
-
-    print(f"\nSaved -> {PROCESSED_DIR / 'customer_segments.csv'}")
-    print(f"Saved -> {MODELS_DIR / 'kmeans_model.pkl'}")
-    print(f"Saved -> {MODELS_DIR / 'elbow_plot.png'}")
+    logger.info(f"\nSaved -> {PROCESSED_DIR / 'customer_segments.csv'}")
+    logger.info(f"Saved -> {MODELS_DIR / 'kmeans_model.pkl'}")
+    logger.info(f"Saved -> {MODELS_DIR / 'elbow_plot.png'}")
