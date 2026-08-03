@@ -55,8 +55,8 @@ No synthetic data, no fake pipeline — this runs on the **Online Retail II** da
       (LR/RF/XGB)     (RFM+KMeans)   (Apriori + rankings)  (LogReg/RF)
             │              │               │               │
             ▼              │               │               │
-      Explainability        │               │               │
-       (SHAP)               │               │               │
+      Explainability       │               │               │
+       (SHAP)              │               │               │
             │              │               │               │
             └──────────────┴───────────────┴───────────────┘
                             │
