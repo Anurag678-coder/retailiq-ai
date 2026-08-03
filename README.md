@@ -1,3 +1,4 @@
+```markdown
 # 🛒 RetailIQ AI
 
 An end-to-end retail analytics project built on **real transaction data**:
@@ -17,26 +18,25 @@ from a UK-based online gift retailer.
   RFM + simple CLV + basket size at the customer level
 - **Cohort retention analysis**: monthly cohort heatmap showing what % of
   each cohort of new customers returns in later months
-- **Cohort retention analysis**: monthly cohorts, retention heatmap — shows
-  how well the business keeps customers, separate from raw revenue trends
 - **Churn prediction**: classification models (Logistic Regression, Random
   Forest) predicting which customers are likely to stop buying, using a
-  proper temporal holdout (train on behavior *before* a cutoff, label from
-  what happened *after* it — no future-data leakage)
+  proper temporal holdout (train on behavior before a cutoff, label from
+  what happened after it — no future-data leakage)
 - **Sales forecasting**: Linear Regression, Random Forest, XGBoost (+
-  optional LightGBM), compared on a chronological train/test split
+  optional LightGBM), compared on a chronological train/test split, with
+  5-fold walk-forward cross-validation
 - **SHAP explainability**: global feature importance + single-prediction
   waterfall breakdown for the tree-based model
 - **Customer segmentation**: RFM scoring, KMeans (k chosen via elbow +
   silhouette score), labeled into Champions / Loyal Customers / At Risk / etc.
 - **Recommendations**: Apriori "frequently bought together" rules, popular
   products, top revenue products, top products per segment
-- **Streamlit dashboard**: KPIs, sales trends, a dedicated **Top Performers**
+- **Streamlit dashboard**: KPIs, sales trends, a dedicated Top Performers
   tab (top areas, top products, and top customers — drillable by country),
-  forecasting, segmentation, recommendations, and SHAP — all in one place.
-  Built with **Plotly** for interactive charts, a sidebar date/country
-  filter, CSV export buttons on key tables, and a what-if forecast
-  simulator (see next section).
+  cohort retention, forecasting, churn prediction, segmentation,
+  recommendations, and SHAP — all in one place. Built with Plotly for
+  interactive charts, a sidebar date/country filter, CSV export buttons on
+  key tables, and a what-if forecast simulator.
 - **REST API** (`api.py`, FastAPI): the same pipeline outputs exposed as
   JSON endpoints with auto-generated Swagger docs — useful if you're
   presenting this project for a Backend or Data Analyst role, not only a
@@ -45,6 +45,7 @@ from a UK-based online gift retailer.
 ## Architecture
 
 ```
+
 Real Transaction Data (UCI Online Retail II)
         │
         ▼
@@ -53,19 +54,20 @@ Preprocessing  (clean, dedupe, remove cancellations/invalid rows)
         ▼
 Feature Engineering  (daily time-series features + customer RFM/CLV features)
         │
-        ├──────────────┬───────────────┐
-        ▼              ▼               ▼
-  Forecasting    Segmentation    Recommendations
-  (LR/RF/XGB)     (RFM+KMeans)   (Apriori + rankings)
-        │              │               │
-        ▼              │               │
-  Explainability        │               │
-   (SHAP)               │               │
-        │              │               │
-        └──────────────┴───────────────┘
+        ├──────────────┬───────────────┬───────────────┐
+        ▼              ▼               ▼               ▼
+  Forecasting    Segmentation    Recommendations   Churn Prediction
+  (LR/RF/XGB)     (RFM+KMeans)   (Apriori + rankings)  (LogReg/RF)
+        │              │               │               │
+        ▼              │               │               │
+  Explainability        │               │               │
+   (SHAP)               │               │               │
+        │              │               │               │
+        └──────────────┴───────────────┴───────────────┘
                         │
                         ▼
-              Streamlit Dashboard
+         Streamlit Dashboard  +  FastAPI REST API
+
 ```
 
 ## Dataset
@@ -88,8 +90,8 @@ Columns: `InvoiceNo`, `StockCode`, `Description`, `Quantity`, `InvoiceDate`,
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/<your-org>/RetailIQ-AI
-cd RetailIQ-AI
+git clone https://github.com/Anurag678-coder/retailiq-ai
+cd retailiq-ai
 
 # 2. Create and activate a virtual environment
 python -m venv venv
@@ -132,7 +134,7 @@ above and save it as `data/raw/online_retail.csv`.
 ## Folder Structure
 
 ```
-RetailIQ-AI/
+retailiq-ai/
 ├── src/
 │   ├── download_data.py         # Fetches the real Online Retail II dataset
 │   ├── preprocessing.py         # Cleaning pipeline
@@ -149,11 +151,13 @@ RetailIQ-AI/
 ├── models/                      # saved models, metrics, plots (gitignored)
 ├── reports/                     # exported charts/screenshots for write-ups
 ├── legacy/                      # old synthetic-data version, kept for reference only
+├── .streamlit/                  # dashboard theme config
 ├── app.py                       # Streamlit dashboard
 ├── api.py                       # FastAPI REST API over the same outputs
 ├── verify_setup.py              # Checks your environment before you run anything
 ├── requirements.txt
 ├── PROJECT_NOTES.md             # design decisions, tradeoffs, viva notes
+├── CHANGELOG.md                 # per-file change history
 └── README.md
 ```
 
@@ -181,7 +185,9 @@ on the specific train/test split and any random seed variance.)*
 
 - Best forecasting model: `models/model_comparison.csv`
 - Customer segments found: `data/processed/customer_segments.csv`
+- Churn predictions: `data/processed/churn_predictions.csv`
 - Top association rules: `data/processed/association_rules.csv`
+- Auto-generated summary: `reports/executive_summary.md`
 
 ## Screenshots
 
@@ -194,10 +200,17 @@ reports/screenshot_forecasting.png
 reports/screenshot_segmentation.png
 ```
 
+## Team — Origin Point
+
+| Member | Role | GitHub | Files Owned |
+|---|---|---|---|
+| **Akshay** | Dashboard, API & Integration | [@Akshay-23A](https://github.com/Akshay-23A) | `app.py`, `api.py`, `verify_setup.py` |
+| **Anurag** | ML Pipeline | [@Anurag678-coder](https://github.com/Anurag678-coder) | `feature_engineering.py`, `forecasting.py`, `explainability.py`, `churn_prediction.py` |
+| **Daksh** | Data Pipeline & Analytics | *(add GitHub link)* | `download_data.py`, `preprocessing.py`, `cohort_analysis.py`, `segmentation.py`, `recommendation.py`, `generate_report.py` |
+
 ## Future Improvements
 
 - Deep learning forecasting (LSTM/Transformer) for comparison against tree models
-- Customer churn prediction as a separate classification task
 - Real-time / incremental pipeline instead of batch re-runs
 - Multi-country breakdown in the dashboard (the dataset spans many countries)
 - Deployment (Streamlit Community Cloud or similar) with a live demo link
@@ -228,7 +241,7 @@ reports/screenshot_segmentation.png
 - Designed and built a REST API (FastAPI) exposing ML pipeline outputs —
   KPIs, forecasts, customer segments, recommendations — as JSON endpoints
   with auto-generated Swagger/OpenAPI documentation
-- Structured a modular Python pipeline (7 independent, single-responsibility
+- Structured a modular Python pipeline (9 independent, single-responsibility
   scripts) with clean file-based I/O contracts between stages
 
 **Data Analyst / BI angle:**
@@ -250,3 +263,4 @@ reports/screenshot_segmentation.png
   regenerable by rerunning the pipeline.
 - See `PROJECT_NOTES.md` for plain-language explanations of each technique
   and the design tradeoffs behind them.
+```
