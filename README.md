@@ -198,7 +198,7 @@ No synthetic data, no fake pipeline — this runs on the **Online Retail II** da
 |---|---|---|---|
 | **Akshay** | Dashboard, API & Integration | [@Akshay-23A](| `app.py`, `api.py`, `verify_setup.py` |
 | **Anurag** | ML Pipeline | [@Anurag678-coder](https://github.com/Anurag678-coder) | `feature_engineering.py`, `forecasting.py`, `explainability.py`, `churn_prediction.py` |
-| **Daksh** | Data Pipeline & Analytics | *[@dkumarbhp2006-cellDaksh] (https://github.com/dkumarbhp2006-cellDaksh) | `download_data.py`, `preprocessing.py`, `cohort_analysis.py`, `segmentation.py`, `recommendation.py`, `generate_report.py` |
+| **Daksh** | Data Pipeline & Analytics | [@dkumarbhp2006-cell](https://github.com/dkumarbhp2006-cell)| `download_data.py`, `preprocessing.py`, `cohort_analysis.py`, `segmentation.py`, `recommendation.py`, `generate_report.py` |
 
 ---
 
