@@ -4,35 +4,35 @@
 
 ## Business Overview
 
-Analyzed **8,981,964** in revenue across **4,639,505** units sold,
-from **2010-12-01** to **2011-12-09**, covering **4,338** identified
-customers across **38** countries.
+Analyzed **17,494,374** in revenue across **9,060,283** units sold,
+from **2009-12-01** to **2011-12-09**, covering **5,878** identified
+customers across **43** countries.
 
 ## Key Findings
 
 **1. Revenue is concentrated, not evenly spread.**
-The top 5 products account for **5.1%** of total revenue — a
+The top 5 products account for **5.0%** of total revenue — a
 strong signal for inventory prioritization: stockouts on these specific
 items would have an outsized revenue impact compared to the long tail.
 
 **2. Customer value is concentrated too.**
-The **Potential Loyalists** segment (2,927 customers)
-drives **43.5%** of total customer spend, despite being a
+The **Potential Loyalists** segment (3,541 customers)
+drives **40.2%** of total customer spend, despite being a
 minority of the customer base — the standard retail pattern where a small
 share of customers drives most of the revenue.
 
 **3. Revenue at churn risk is quantifiable.**
-The **At Risk** segment represents **1,060 customers** and
-**$475,887** in historical spend — a concrete, sized target
+The **At Risk** segment represents **1,915 customers** and
+**$1,220,037** in historical spend — a concrete, sized target
 for a win-back campaign, rather than a vague "some customers might churn."
 
 **4. Sales are forecastable with reasonable accuracy.**
 The best-performing model (**Linear Regression**) achieves an R² of
-**0.375** and a mean absolute error of **4395.9 units/day**
-on held-out data. Validated across 5 expanding time-window folds (walk-forward cross-validation), with a mean R² of 0.057 (std 0.140), showing the model holds up consistently across different time periods, not just one lucky test window.
+**0.335** and a mean absolute error of **4775.7 units/day**
+on held-out data. Validated across 5 expanding time-window folds (walk-forward cross-validation), with a mean R² of -0.722 (std 1.469), showing the model holds up consistently across different time periods, not just one lucky test window.
 
 **5. Cross-selling opportunities exist and are quantified.**
-Market basket analysis (Apriori) surfaced **6524** statistically
+Market basket analysis (Apriori) surfaced **1510** statistically
 meaningful "frequently bought together" product pairs — concrete candidates
 for bundling or "customers also bought" placement.
 
