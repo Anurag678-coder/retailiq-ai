@@ -1,5 +1,4 @@
-
-
+'''
 Readme · MD
 🛒 RetailIQ AI
 An end-to-end retail analytics project built on real transaction data: cleaning → feature engineering → sales forecasting (3–4 models) → SHAP explainability → RFM + KMeans customer segmentation → product recommendations (Apriori + rank-based) → an interactive Streamlit dashboard.
@@ -185,4 +184,4 @@ Rolling features are computed on shift(1) first so a day's own value never leaks
 avg_order_value is intentionally excluded from the forecasting feature set — it's derived from same-day revenue, so using it to predict same-day units sold would leak the answer.
 data/, models/, and venv/ are excluded from git — they're regenerable by rerunning the pipeline.
 See PROJECT_NOTES.md for plain-language explanations of each technique and the design tradeoffs behind them.
-
+'''
